@@ -52,9 +52,11 @@ type Sequence int64
 
 // Difference defines an ordering for comparing TCP sequences that's safe for
 // roll-overs.  It returns:
-//    > 0 : if t comes after s
-//    < 0 : if t comes before s
-//      0 : if t == s
+//
+//	> 0 : if t comes after s
+//	< 0 : if t comes before s
+//	  0 : if t == s
+//
 // The number returned is the sequence difference, so 4.Difference(8) will
 // return 4.
 //
@@ -229,6 +231,7 @@ func (dir TCPFlowDirection) Reverse() TCPFlowDirection {
 // packets).  Unused pages are stored in and returned from a pageCache, which
 // avoids memory allocation.  Used pages are stored in a doubly-linked list in
 // a connection.
+// // page被用来存储我们还未准备好的TCP数据（乱序数据包）。未使用的page被存储在pageCache中，这避免了内存分配。已使用的page被存储在连接中的一个双向链表里
 type page struct {
 	bytes      []byte
 	seq        Sequence
@@ -238,6 +241,23 @@ type page struct {
 	seen       time.Time
 	start, end bool
 }
+
+/*
+page结构体的作用：
+
+page结构体在gopacket的reassembly子目录中，主要用于存储接收到的TCP数据包。当数据包乱序到达时，会先存储在page中，等待其它数据包到达后进行重组。
+
+page结构体包含以下字段：
+
+bytes：存储TCP数据包的负载数据。
+seq：TCP数据包的序列号。
+prev，next：在双向链表中，指向前一个和后一个page。
+buf：一个固定大小的缓冲区，用于存储TCP数据包的负载数据。
+ac：AssemblerContext对象，只在数据包的第一个page中设置。
+seen：记录这个page被看到（接收到）的时间。
+start，end：标记这个page是否是一个TCP数据流的开始或结束。
+在处理TCP数据包时，page结构体提供了一种方便的方式来存储和管理数据包。通过prev和next字段，可以将多个page组织成一个双向链表，方便进行数据包的排序和重组。
+*/
 
 func (p *page) getBytes() []byte {
 	return p.bytes
@@ -356,9 +376,9 @@ func (lp *livePacket) release(*pageCache) int {
 // it to create a new Stream for every TCP stream.
 //
 // assembly will, in order:
-//    1) Create the stream via StreamFactory.New
-//    2) Call ReassembledSG 0 or more times, passing in reassembled TCP data in order
-//    3) Call ReassemblyComplete one time, after which the stream is dereferenced by assembly.
+//  1. Create the stream via StreamFactory.New
+//  2. Call ReassembledSG 0 or more times, passing in reassembled TCP data in order
+//  3. Call ReassemblyComplete one time, after which the stream is dereferenced by assembly.
 type Stream interface {
 	// Tell whether the TCP packet should be accepted, start could be modified to force a start even if no SYN have been seen
 	Accept(tcp *layers.TCP, ci gopacket.CaptureInfo, dir TCPFlowDirection, nextSeq Sequence, start *bool, ac AssemblerContext) bool
@@ -517,7 +537,7 @@ type AssemblerOptions struct {
 // applications written in Go.  The Assembler uses the following methods to be
 // as fast as possible, to keep packet processing speedy:
 //
-// Avoids Lock Contention
+// # Avoids Lock Contention
 //
 // Assemblers locks connections, but each connection has an individual lock, and
 // rarely will two Assemblers be looking at the same connection.  Assemblers
@@ -537,7 +557,7 @@ type AssemblerOptions struct {
 // avoiding all lock contention.  Only when different Assemblers could receive
 // packets for the same Stream should a StreamPool be shared between them.
 //
-// Avoids Memory Copying
+// # Avoids Memory Copying
 //
 // In the common case, handling of a single TCP packet should result in zero
 // memory allocations.  The Assembler will look up the connection, figure out
@@ -545,7 +565,7 @@ type AssemblerOptions struct {
 // the appropriate connection's handling code.  Only if a packet arrives out of
 // order is its contents copied and stored in memory for later.
 //
-// Avoids Memory Allocation
+// # Avoids Memory Allocation
 //
 // Assemblers try very hard to not use memory allocation unless absolutely
 // necessary.  Packet data for sequential packets is passed directly to streams
@@ -632,9 +652,9 @@ type assemblerAction struct {
 //
 // Each AssembleWithContext call results in, in order:
 //
-//    zero or one call to StreamFactory.New, creating a stream
-//    zero or one call to ReassembledSG on a single stream
-//    zero or one call to ReassemblyComplete on the same stream
+//	zero or one call to StreamFactory.New, creating a stream
+//	zero or one call to ReassembledSG on a single stream
+//	zero or one call to ReassemblyComplete on the same stream
 func (a *Assembler) AssembleWithContext(netFlow gopacket.Flow, t *layers.TCP, ac AssemblerContext) {
 	var conn *connection
 	var half *halfconnection
@@ -1114,7 +1134,6 @@ func (a *Assembler) sendToConnection(conn *connection, half *halfconnection, ac 
 	return nextSeq
 }
 
-//
 func (a *Assembler) addPending(half *halfconnection, firstSeq Sequence) int {
 	if half.saved == nil {
 		return 0

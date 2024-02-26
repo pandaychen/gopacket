@@ -28,6 +28,19 @@ type pageCache struct {
 	pageRequests int64
 }
 
+/*
+pageCache结构体在gopacket的reassembly子目录中，主要用于避免频繁的内存分配，提高性能。
+
+pageCache是一个并发非安全的page对象存储。它使用sync.Pool来缓存和回收page对象。sync.Pool是Go标准库提供的一个用于存储临时对象的并发安全的内存池，它可以有效减少内存分配的开销，提高性能。
+
+pageCache结构体包含以下字段：
+
+pagePool：一个sync.Pool对象，用于存储和回收page对象。
+used：当前已使用的page对象数量。
+pageRequests：已请求page对象的总数量。
+在处理TCP数据包时，如果需要一个新的page对象，可以从pageCache中获取。如果pageCache中没有可用的page对象，sync.Pool会自动创建一个新的page对象。当page对象不再需要时，可以将其归还给pageCache，以便后续重用。这样可以避免频繁的内存分配和垃圾回收，提高性能。
+*/
+
 func newPageCache() *pageCache {
 	pc := &pageCache{
 		pagePool: &sync.Pool{
