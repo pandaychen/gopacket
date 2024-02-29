@@ -109,6 +109,26 @@ type StreamPool struct {
 	newConnectionCount int64
 }
 
+/*
+// StreamPool存储了Assembler创建的所有流，允许多个Assembler一起处理流，同时确保单个流按顺序接收数据。它是线程安全的，可以同时被多个Assembler使用。 // // StreamPool负责创建和存储一个或多个Assembler对象使用的Stream对象。当Assembler发现一个新的TCP流时，它会通过调用StreamFactory的New方法创建一个关联的Stream。此后（直到流关闭），Stream对象将通过Assembler调用流的Reassembled函数接收已组装的TCP数据。 // // 与Assembler一样，StreamPool试图尽量减少内存分配。然而，与Assembler不同的是，它确实需要进行一些锁定操作，以确保它存储的连接对象可以被多个Assembler访问。
+
+StreamPool结构体的意义：
+
+StreamPool结构体主要用于管理TCP流的创建和存储。它允许多个Assembler共享和处理同一组TCP流，同时确保每个流按顺序接收数据。StreamPool是线程安全的，可以同时被多个Assembler使用。
+
+StreamPool结构体包含以下字段：
+
+conns：一个映射，存储所有活跃的TCP连接。
+users：当前使用StreamPool的Assembler的数量。
+mu：一个读写锁，用于保护conns映射的并发访问。
+factory：一个StreamFactory对象，用于创建新的Stream。
+free：一个空闲连接的列表，用于存储已关闭的TCP连接，以便后续重用。
+all：一个二维切片，存储所有分配的连接对象，用于内存管理。
+nextAlloc：下一次分配连接对象时使用的索引。
+newConnectionCount：已创建的新连接的总数。
+StreamPool结构体提供了一种高效的方式来管理TCP流，使得多个Assembler可以共享和处理同一组TCP流。通过使用读写锁和内存池，StreamPool可以在保证线程安全的同时，尽量减少内存分配和垃圾回收的开销。
+*/
+
 const initialAllocSize = 1024
 
 func (p *StreamPool) grow() {

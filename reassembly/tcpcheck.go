@@ -122,6 +122,24 @@ type TCPSimpleFSM struct {
 	options TCPSimpleFSMOptions
 }
 
+/*
+TCPSimpleFSM 结构体在gopacket的reassembly子目录中，它实现了一个非常简单的TCP状态机。
+
+用途： 当实现一个Stream接口并且想避免处理由于客户端/服务器的TCP堆栈而拒绝的数据包时，可以在Accept()方法中调用TCPSimpleFSM.CheckState()。
+
+局限性：
+
+数据包应按顺序接收。
+不执行序列号检查。
+不处理RST（复位）数据包。
+TCPSimpleFSM 结构体包含以下字段：
+
+dir：一个TCPFlowDirection类型的值，表示TCP流的方向。
+state：一个整数，表示TCP状态机的当前状态。
+options：一个TCPSimpleFSMOptions类型的值，表示TCP状态机的配置选项。
+TCPSimpleFSM 结构体提供了一种简单的方法来处理TCP数据包的状态，以便在实现Stream接口时只处理有效的数据包。虽然它具有一定的局限性，但对于简单的用例和快速原型设计，这个简单的TCP状态机可能已经足够了。
+*/
+
 // TCPSimpleFSMOptions holds options for TCPSimpleFSM
 type TCPSimpleFSMOptions struct {
 	SupportMissingEstablishment bool // Allow missing SYN, SYN+ACK, ACK

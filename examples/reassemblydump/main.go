@@ -543,6 +543,7 @@ func main() {
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
 
+	// 持续收包
 	for packet := range source.Packets() {
 		count++
 		Debug("PACKET #%d\n", count)
@@ -580,6 +581,7 @@ func main() {
 		}
 
 		tcp := packet.Layer(layers.LayerTypeTCP)
+		//只重组TCP包
 		if tcp != nil {
 			tcp := tcp.(*layers.TCP)
 			if *checksum {
@@ -589,14 +591,50 @@ func main() {
 				}
 			}
 			c := Context{
+				// 构建上下文
 				CaptureInfo: packet.Metadata().CaptureInfo,
 			}
 			stats.totalsz += len(tcp.Payload)
+
+			/*
+				assembler.AssembleWithContext(packet.NetworkLayer().NetworkFlow(), tcp, &c): 这个方法用于将捕获的TCP数据包重组到对应的TCP流中。方法接收三个参数：网络层的流（由packet.NetworkLayer().NetworkFlow()获取）、TCP层的数据（tcp）以及装配上下文（&c）。在重组过程中，装配器（assembler）会根据TCP数据包的信息（如源地址、目标地址、序列号等）找到或创建对应的TCP流，并将数据包的数据添加到该流中
+			*/
+
+			/*
+							AssembleWithContext方法中，装配上下文的用途是啥
+				assistant
+				在AssembleWithContext方法中，装配上下文（AssemblerContext）的用途主要是提供关于数据包捕获的元数据信息，如数据包的时间戳、捕获长度等。这些元数据信息对于正确处理和重组TCP数据包非常重要。
+
+				装配上下文（AssemblerContext）是一个接口，它定义了GetCaptureInfo()方法，该方法返回一个gopacket.CaptureInfo结构体，其中包含数据包捕获的元数据信息。在AssembleWithContext方法中，程序会调用ac.GetCaptureInfo()来获取数据包的元数据信息，并根据这些信息处理数据包。
+
+				例如，在处理数据包时，装配器（Assembler）需要知道数据包的时间戳，以便确定数据包的顺序、更新TCP流的状态以及决定何时刷新和关闭TCP流。通过装配上下文（AssemblerContext），AssembleWithContext方法可以方便地访问这些信息，从而正确地处理和重组TCP数据包
+			*/
 			assembler.AssembleWithContext(packet.NetworkLayer().NetworkFlow(), tcp, &c)
 		}
 		if count%*statsevery == 0 {
+			/*
+				这段代码的作用是获取数据包的时间戳。packet.Metadata().CaptureInfo.Timestamp 返回数据包捕获时的时间戳。这个时间戳在处理和重组TCP数据包时非常重要，因为它可以帮助确定数据包的顺序、更新TCP流的状态以及决定何时刷新和关闭TCP流。
+
+				packet 是一个 gopacket.Packet 类型的变量，表示捕获的数据包。Metadata() 方法返回数据包的元数据，CaptureInfo 结构体包含了捕获时的相关信息，其中 Timestamp 字段表示数据包捕获的时间戳。通过这段代码，程序可以方便地访问数据包的时间戳，并将其用于处理和重组TCP数据包。
+			*/
 			ref := packet.Metadata().CaptureInfo.Timestamp
+			/*
+				assembler.FlushWithOptions(reassembly.FlushOptions{T: ref.Add(-timeout), TC: ref.Add(-closeTimeout)}): 这个方法用于刷新装配器中的所有TCP流，确保所有缓存的数据包都被处理。方法接收一个FlushOptions结构体作为参数，该结构体指定了刷新选项。在这个示例中，T字段设置了刷新的时间阈值，TC字段设置了关闭TCP流的时间阈值。具体来说，任何在ref.Add(-timeout)时间之前最后一次接收到数据包的TCP流，以及任何在ref.Add(-closeTimeout)时间之前关闭的TCP流，都会被刷新和关闭。
+			*/
 			flushed, closed := assembler.FlushWithOptions(reassembly.FlushOptions{T: ref.Add(-timeout), TC: ref.Add(-closeTimeout)})
+			/*
+							设计FlushWithOptions方法的意义是什么，这两个参数的默认值分别是多少
+				assistant
+				FlushWithOptions方法的设计意义在于确保装配器中的所有TCP流都得到处理，以便在适当的时候刷新和关闭它们。这对于释放资源、避免内存泄漏以及确保所有缓存的数据包都被处理非常重要。
+
+				FlushWithOptions方法接收一个reassembly.FlushOptions结构体作为参数，该结构体包含以下两个字段：
+
+				T time.Time：这个字段表示刷新的时间阈值。任何在此时间之前最后一次接收到数据包的TCP流都会被刷新。如果不设置这个字段（默认为零值），则装配器将不会根据时间阈值刷新TCP流。
+
+				TC time.Time：这个字段表示关闭TCP流的时间阈值。任何在此时间之前关闭的TCP流都会被关闭。如果不设置这个字段（默认为零值），则装配器将不会根据时间阈值关闭TCP流。
+
+				这两个参数的默认值都是零值（time.Time{}），表示装配器不会根据时间阈值刷新或关闭TCP流。然而，在实际应用中，通常需要根据实际需求设置合适的时间阈值，以便及时刷新和关闭不再活跃的TCP流。
+			*/
 			Debug("Forced flush: %d flushed, %d closed (%s)", flushed, closed, ref)
 		}
 
@@ -622,6 +660,7 @@ func main() {
 	closed := assembler.FlushAll()
 	Debug("Final flush: %d closed", closed)
 	if outputLevel >= 2 {
+		// 获取重组结果
 		streamPool.Dump()
 	}
 
@@ -659,3 +698,13 @@ func main() {
 		fmt.Printf(" %s:\t\t%d\n", e, errorsMap[e])
 	}
 }
+
+/*
+在该例子中，assembler.AssembleWithContext(packet.NetworkLayer().NetworkFlow(), tcp, &c)和assembler.FlushWithOptions(reassembly.FlushOptions{T: ref.Add(-timeout), TC: ref.Add(-closeTimeout)})这两个方法，详细描述他们的作用
+assistant
+assembler.AssembleWithContext(packet.NetworkLayer().NetworkFlow(), tcp, &c): 这个方法用于将捕获的TCP数据包重组到对应的TCP流中。方法接收三个参数：网络层的流（由packet.NetworkLayer().NetworkFlow()获取）、TCP层的数据（tcp）以及装配上下文（&c）。在重组过程中，装配器（assembler）会根据TCP数据包的信息（如源地址、目标地址、序列号等）找到或创建对应的TCP流，并将数据包的数据添加到该流中。
+
+assembler.FlushWithOptions(reassembly.FlushOptions{T: ref.Add(-timeout), TC: ref.Add(-closeTimeout)}): 这个方法用于刷新装配器中的所有TCP流，确保所有缓存的数据包都被处理。方法接收一个FlushOptions结构体作为参数，该结构体指定了刷新选项。在这个示例中，T字段设置了刷新的时间阈值，TC字段设置了关闭TCP流的时间阈值。具体来说，任何在ref.Add(-timeout)时间之前最后一次接收到数据包的TCP流，以及任何在ref.Add(-closeTimeout)时间之前关闭的TCP流，都会被刷新和关闭。
+
+总的来说，assembler.AssembleWithContext方法用于处理和重组TCP数据包，而assembler.FlushWithOptions方法用于确保所有数据包都被处理，并在适当的时候关闭TCP流。通过这两个方法，程序可以正确地处理并重组TCP数据流，以及及时地关闭不再活跃的TCP流。
+*/
